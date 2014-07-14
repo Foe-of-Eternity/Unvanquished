@@ -264,12 +264,118 @@ CG_BeaconDynamics
 =============
 */
 
+// the missing 2d vector functions...
+
+#define Vector2Add(a,b,r) ((r)[0]=(a)[0]+(b)[0],(r)[1]=(a)[1]+(b)[1])
+#define Vector2Scale(v,s,r) ((r)[0]=(v)[0]*(s),(r)[1]=(v)[1]*(s))
+#define Vector2MA(a,b,s,r) ((r)[0]=(a)[0]+(b)[0]*(s),(r)[1]=(a)[1]+(b)[1]*(s))
+#define Vector2Length(v) sqrt(Square((v)[0])+Square((v)[1]))
+
+vec_t Vector2Normalize( vec2_t v )
+{
+	vec_t l;
+
+	l = Vector2Length( v );
+	Vector2Scale( v, 1.0/l, v );
+
+	return l;
+}
+
+void Vector2Validate( vec2_t v, vec2_t revert_to )
+{
+	if( Q_isnan( v[ 0 ] ) ||
+	    Q_isnan( v[ 1 ] ) ||
+	    Q_isnan( v[ 0 ] - v[ 0 ] ) ||
+	    Q_isnan( v[ 1 ] - v[ 1 ] ) )
+	{
+		Com_Printf( "^1wtf: %p=(%f,%f)\n", v, v[0], v[1] );
+
+		if( revert_to )
+			Vector2Copy( revert_to, v );
+		else
+			Vector2Set( v, 0, 0 );
+	}
+}
+
+#define TIME_MOD 2000
+#define SPRING_MOD 1.0e-3
+#define DAMPER_MOD 1.0e-1
+#define DAMPER_EXP 2.0
+#define GRAVITY_MOD 1.0
+
 void CG_BeaconDynamics( void )
 {
-	cbeacon_t *b;
+	cbeacon_t *a, *b;
+	vec2_t delta;
+	vec_t r, F, dt;
 
-	for( b = cg.beacons; b < cg.beacons + cg.num_beacons; b++ )
-		Vector2Copy( b->pos_proj, b->s->pos );
+	// for debugging only
+	float d1, d2, d3, d4;
+	/*d1 = trap_Cvar_VariableValue( "d1" );
+	d2 = trap_Cvar_VariableValue( "d2" );
+	d3 = trap_Cvar_VariableValue( "d3" );
+	d4 = trap_Cvar_VariableValue( "d4" );*/
+
+	dt = 1.0e-3 * cg.frametime * TIME_MOD;
+
+	// calculate acceleration
+	for( a = cg.beacons; a < cg.beacons + cg.num_beacons; a++ )
+	{
+		Vector2Set( a->acc, 0, 0 );
+
+		if( !a->s->old )
+		{
+			Vector2Copy( a->pos_proj, a->s->pos );
+			Vector2Set( a->s->vel, 0, 0 );
+		}
+
+		// spring
+		Vector2Subtract( a->pos_proj, a->s->pos, delta );
+		r = Vector2Normalize( delta );
+		F = 1.0 * r * SPRING_MOD;
+		Vector2MA( a->acc, delta, F, a->acc );
+
+		// damper
+		r = Vector2Length( delta );
+		F = -1.0 * r * DAMPER_MOD;
+		Vector2MA( a->acc, a->s->vel, F/r, a->acc );
+
+		// gravity
+		//if(0)
+		for( b = cg.beacons; b < cg.beacons + cg.num_beacons; b++ )
+		{
+			if( a == b )
+				continue;
+			Vector2Subtract( a->s->pos, b->s->pos, delta );
+			r = Vector2Normalize( delta );
+			F = 1.0 * 1.0/r * GRAVITY_MOD;
+			Vector2MA( a->acc, delta, F, a->acc );
+		}
+	}
+
+	// integrate
+	for( a = cg.beacons; a < cg.beacons + cg.num_beacons; a++ )
+	{
+		Vector2MA( a->s->vel, a->acc, dt, a->s->vel );
+		Vector2MA( a->s->pos, a->s->vel, dt, a->s->pos );
+
+		if( a->s->pos[ 0 ] < 0 )
+			a->s->pos[ 0 ] = 0,
+			a->s->vel[ 0 ] = 0;
+		if( a->s->pos[ 0 ] > cgs.glconfig.vidWidth )
+			a->s->pos[ 0 ] = cgs.glconfig.vidWidth,
+			a->s->vel[ 0 ] = 0;
+		if( a->s->pos[ 1 ] < 0 )
+			a->s->pos[ 1 ] = 0,
+			a->s->vel[ 1 ] = 0;
+		if( a->s->pos[ 1 ] > cgs.glconfig.vidHeight )
+			a->s->pos[ 1 ] = cgs.glconfig.vidHeight,
+			a->s->vel[ 1 ] = 0;
+
+		Vector2Validate( a->acc, NULL );
+		Vector2Validate( a->s->vel, NULL );
+		Vector2Validate( a->s->pos, a->pos_proj );
+	}
 }
 
 /*

@@ -649,6 +649,9 @@ typedef struct
 	vec3_t        origin;
 	int           ctime; // creation time
 	int           etime; // expiration time, 0 if never expires
+
+	// dynamics
+	vec2_t        vel;
 } cbeaconPersistent_t;
 
 // all data here must be deduceable at any moment
@@ -676,6 +679,9 @@ typedef struct
 	qboolean      clamped;
 	vec2_t        clamp_dir;
 	qboolean      highlighted; //todo
+
+	// dynamics
+	vec2_t        acc;
 } cbeacon_t;
 
 //======================================================================
